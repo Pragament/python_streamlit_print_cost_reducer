@@ -1,6 +1,3 @@
-Here is your complete and cleaned-up `README.md` file with visible image support, ideal for GitHub or local Markdown preview in VS Code:
-
----
 
 ````markdown
 # 🧾 Advanced PDF Printing Cost Estimator
