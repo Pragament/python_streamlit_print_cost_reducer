@@ -1,5 +1,4 @@
 
-````markdown
 # 🧾 Advanced PDF Printing Cost Estimator
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://streamlit.io/)
@@ -52,17 +51,14 @@ This tool goes beyond simple page counting by analyzing the pixel data of each p
 - **macOS (using Homebrew)**:
   ```bash
   brew install poppler
-````
-
-* **Ubuntu/Debian**:
-
+  ```
+- **Ubuntu/Debian**:
   ```bash
   sudo apt-get update && sudo apt-get install -y poppler-utils
   ```
-* **Windows**:
-
-  * Download from [http://blog.alivate.com.au/poppler-windows/](http://blog.alivate.com.au/poppler-windows/)
-  * Extract it and add the `bin/` folder to your System PATH
+- **Windows**:
+  - Download from [http://blog.alivate.com.au/poppler-windows/](http://blog.alivate.com.au/poppler-windows/)
+  - Extract it and add the `bin/` folder to your System PATH
 
 ---
 
@@ -116,15 +112,13 @@ Your browser will open with the app running at `http://localhost:8501`.
 
 ## 🛠️ Technology Stack
 
-* **Frontend & Backend**: [Streamlit](https://streamlit.io/)
-* **PDF to Image Conversion**: [pdf2image](https://github.com/Belval/pdf2image)
-* **Image Processing**: [Pillow](https://python-pillow.org/)
-* **Numerical Computations**: [NumPy](https://numpy.org/)
+- **Frontend & Backend**: [Streamlit](https://streamlit.io/)
+- **PDF to Image Conversion**: [pdf2image](https://github.com/Belval/pdf2image)
+- **Image Processing**: [Pillow](https://python-pillow.org/)
+- **Numerical Computations**: [NumPy](https://numpy.org/)
 
 ---
 
 ## 📜 License
 
 This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for more details.
-
-
