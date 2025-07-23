@@ -1,4 +1,4 @@
-Here's your updated and **nicely formatted** `README.md` file for the **Advanced PDF Printing Cost Estimator**, with proper Markdown structure and working image visibility using relative paths (if you're using GitHub or a local Markdown renderer):
+Here is your complete and cleaned-up `README.md` file with visible image support, ideal for GitHub or local Markdown preview in VS Code:
 
 ---
 
@@ -47,54 +47,65 @@ This tool goes beyond simple page counting by analyzing the pixel data of each p
 
 ### 1. Prerequisites
 
-- **Python**: Version 3.8 or higher.
-- **Poppler**: Required by `pdf2image`.
+- **Python**: Version 3.8 or higher
+- **Poppler**: Required by `pdf2image`
 
-  - **macOS (Homebrew)**:
-    ```bash
-    brew install poppler
-    ```
+#### Install Poppler:
 
-  - **Ubuntu/Debian**:
-    ```bash
-    sudo apt-get update && sudo apt-get install -y poppler-utils
-    ```
+- **macOS (using Homebrew)**:
+  ```bash
+  brew install poppler
+````
 
-  - **Windows**:
-    - Download Poppler from: [http://blog.alivate.com.au/poppler-windows/](http://blog.alivate.com.au/poppler-windows/)
-    - Extract and add the `bin` folder to your system PATH.
+* **Ubuntu/Debian**:
+
+  ```bash
+  sudo apt-get update && sudo apt-get install -y poppler-utils
+  ```
+* **Windows**:
+
+  * Download from [http://blog.alivate.com.au/poppler-windows/](http://blog.alivate.com.au/poppler-windows/)
+  * Extract it and add the `bin/` folder to your System PATH
+
+---
 
 ### 2. Clone the Repository
 
 ```bash
 git clone https://github.com/your-username/python_streamlit_print_cost_reducer.git
 cd python_streamlit_print_cost_reducer
-````
+```
+
+---
 
 ### 3. Install Dependencies
 
-Use a virtual environment (recommended):
+Create a virtual environment and install packages:
 
 ```bash
-# Create and activate a virtual environment
+# Create virtual environment
 python -m venv venv
-# On macOS/Linux
-source venv/bin/activate
-# On Windows
+
+# Activate it
+# For Windows:
 venv\Scripts\activate
+# For macOS/Linux:
+source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 ```
 
-### Sample `requirements.txt`
+#### `requirements.txt` content:
 
-```
+```txt
 streamlit
 pdf2image
 Pillow
 numpy
 ```
+
+---
 
 ### 4. Run the App
 
@@ -102,29 +113,22 @@ numpy
 streamlit run app.py
 ```
 
+Your browser will open with the app running at `http://localhost:8501`.
+
 ---
 
 ## 🛠️ Technology Stack
 
-* **Framework**: [Streamlit](https://streamlit.io/)
+* **Frontend & Backend**: [Streamlit](https://streamlit.io/)
 * **PDF to Image Conversion**: [pdf2image](https://github.com/Belval/pdf2image)
 * **Image Processing**: [Pillow](https://python-pillow.org/)
-* **Numerical Computation**: [NumPy](https://numpy.org/)
+* **Numerical Computations**: [NumPy](https://numpy.org/)
 
 ---
 
 ## 📜 License
 
-This project is licensed under the **MIT License**. See the `LICENSE` file for details.
+This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for more details.
 
 ```
 
----
-
-### ✅ Notes:
-- Ensure `assets/1.png` and `assets/2.png` exist in the correct path.
-- Update the repository URL in the clone step.
-- This version is styled for GitHub README or any Markdown viewer.
-
-Let me know if you want this exported as a `.md` file!
-```
