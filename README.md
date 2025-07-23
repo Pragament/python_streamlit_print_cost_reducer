@@ -46,21 +46,6 @@ This tool goes beyond simple page counting by analyzing the pixel data of each p
 - **Python**: Version 3.8 or higher
 - **Poppler**: Required by `pdf2image`
 
-#### Install Poppler:
-
-- **macOS (using Homebrew)**:
-  ```bash
-  brew install poppler
-  ```
-- **Ubuntu/Debian**:
-  ```bash
-  sudo apt-get update && sudo apt-get install -y poppler-utils
-  ```
-- **Windows**:
-  - Download from [http://blog.alivate.com.au/poppler-windows/](http://blog.alivate.com.au/poppler-windows/)
-  - Extract it and add the `bin/` folder to your System PATH
-
----
 
 ### 2. Clone the Repository
 
