@@ -1,7 +1,6 @@
+Here's your updated and **nicely formatted** `README.md` file for the **Advanced PDF Printing Cost Estimator**, with proper Markdown structure and working image visibility using relative paths (if you're using GitHub or a local Markdown renderer):
 
-
------
-
+---
 
 ````markdown
 # 🧾 Advanced PDF Printing Cost Estimator
@@ -30,15 +29,16 @@ This tool goes beyond simple page counting by analyzing the pixel data of each p
 
 ## 📸 Screenshots
 
-Here is a look at the application's interface and features.
-
+### 🔧 Main Interface
 <p align="center">
-  <em>Main interface showing printing options and color removal tools.</em><br>
-  <img src="./assets/1.png" width="700" alt="Application Screenshot 1">
+  <img src="assets/1.png" width="700" alt="Application Screenshot 1">
+  <br><em>Main interface showing printing options and color removal tools.</em>
 </p>
+
+### 📊 Cost & Ink Comparison
 <p align="center">
-  <em>Cost and ink comparison between the original and modified PDF.</em><br>
-  <img src="./assets/2.png" width="700" alt="Application Screenshot 2">
+  <img src="assets/2.png" width="700" alt="Application Screenshot 2">
+  <br><em>Cost and ink comparison between the original and modified PDF.</em>
 </p>
 
 ---
@@ -48,68 +48,83 @@ Here is a look at the application's interface and features.
 ### 1. Prerequisites
 
 - **Python**: Version 3.8 or higher.
-- **Poppler**: `pdf2image` requires the Poppler utility.
+- **Poppler**: Required by `pdf2image`.
 
-  - **On macOS (using Homebrew):**
+  - **macOS (Homebrew)**:
     ```bash
     brew install poppler
     ```
-  - **On Ubuntu/Debian:**
+
+  - **Ubuntu/Debian**:
     ```bash
     sudo apt-get update && sudo apt-get install -y poppler-utils
     ```
-  - **On Windows:**
-    Download and install Poppler, then add its `bin` folder to your system's PATH.
+
+  - **Windows**:
+    - Download Poppler from: [http://blog.alivate.com.au/poppler-windows/](http://blog.alivate.com.au/poppler-windows/)
+    - Extract and add the `bin` folder to your system PATH.
 
 ### 2. Clone the Repository
 
 ```bash
-git clone <your-repository-url>
-cd <repository-directory>
+git clone https://github.com/your-username/python_streamlit_print_cost_reducer.git
+cd python_streamlit_print_cost_reducer
 ````
 
-### 3\. Install Dependencies
+### 3. Install Dependencies
 
-It's recommended to use a virtual environment.
+Use a virtual environment (recommended):
 
 ```bash
 # Create and activate a virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+# On macOS/Linux
+source venv/bin/activate
+# On Windows
+venv\Scripts\activate
 
-# Install the required Python packages
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-You will need a `requirements.txt` file with the following content:
+### Sample `requirements.txt`
 
-```txt
+```
 streamlit
 pdf2image
 Pillow
 numpy
 ```
 
-### 4\. Run the Streamlit App
+### 4. Run the App
 
 ```bash
 streamlit run app.py
 ```
 
------
+---
 
 ## 🛠️ Technology Stack
 
-  - **Framework**: [Streamlit](https://streamlit.io/)
-  - **PDF Processing**: [pdf2image](https://github.com/Belval/pdf2image)
-  - **Image Manipulation**: [Pillow (PIL)](https://www.google.com/search?q=https://python-pillow.org/)
-  - **Numerical Operations**: [NumPy](https://numpy.org/)
+* **Framework**: [Streamlit](https://streamlit.io/)
+* **PDF to Image Conversion**: [pdf2image](https://github.com/Belval/pdf2image)
+* **Image Processing**: [Pillow](https://python-pillow.org/)
+* **Numerical Computation**: [NumPy](https://numpy.org/)
 
------
+---
 
 ## 📜 License
 
-This project is licensed under the MIT License. See the `LICENSE` file for more details.
+This project is licensed under the **MIT License**. See the `LICENSE` file for details.
 
 ```
+
+---
+
+### ✅ Notes:
+- Ensure `assets/1.png` and `assets/2.png` exist in the correct path.
+- Update the repository URL in the clone step.
+- This version is styled for GitHub README or any Markdown viewer.
+
+Let me know if you want this exported as a `.md` file!
 ```
