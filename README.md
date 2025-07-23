@@ -127,5 +127,4 @@ Your browser will open with the app running at `http://localhost:8501`.
 
 This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for more details.
 
-```
 
