@@ -2,7 +2,11 @@ import streamlit as st
 from pdf2image import convert_from_bytes
 from PIL import Image
 import numpy as np
-import io
+import io 
+from pdf2image import convert_from_bytes
+
+# images = convert_from_bytes(pdf_bytes, dpi=72, poppler_path=r"C:\Users\HP\Downloads\Release-24.08.0-0\poppler-24.08.0\bin")
+
 
 # --- Helper function to convert hex to RGB ---
 def hex_to_rgb(hex_code):
@@ -34,18 +38,109 @@ def remove_colors_from_image(image, colors_to_remove, threshold):
     return Image.fromarray(arr.astype('uint8'), 'RGB')
 
 # --- Function to generate a new PDF from modified images ---
-def generate_pdf_from_images(images):
-    """Saves a list of PIL Images to a PDF in memory."""
+def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrait", gap=10):
+    """Saves a list of PIL Images to a PDF in memory, arranging images per page and orientation."""
     if not images:
         return None
+
+    # Standard page sizes in pixels (at 100 DPI)
+    page_sizes = {
+        "Portrait": {"A4": (595, 842), "A3": (842, 1191)},
+        "Landscape": {"A4": (842, 595), "A3": (1191, 842)}
+    }
     
+    # Use A4 size for now (can be made configurable)
+    page_size = page_sizes[orientation]["A4"]
+    
+    pages = []
+    for i in range(0, len(images), num_images_per_page):
+        imgs = images[i:i+num_images_per_page]
+        
+        # Create a blank page
+        page = Image.new("RGB", page_size, (255, 255, 255))
+        
+        if num_images_per_page == 1:
+            # Single image per page - center it
+            img = imgs[0]
+            # Calculate scaling to fit page with margins
+            margin = 50
+            max_width = page_size[0] - 2 * margin
+            max_height = page_size[1] - 2 * margin
+            
+            # Calculate scale to fit image within page bounds
+            scale_w = max_width / img.size[0]
+            scale_h = max_height / img.size[1]
+            scale = min(scale_w, scale_h)
+            
+            new_width = int(img.size[0] * scale)
+            new_height = int(img.size[1] * scale)
+            img_resized = img.resize((new_width, new_height), Image.LANCZOS)
+            
+            # Center the image
+            x = (page_size[0] - new_width) // 2
+            y = (page_size[1] - new_height) // 2
+            page.paste(img_resized, (x, y))
+            
+        else:
+            # Multiple images per page - arrange based on orientation
+            if orientation == "Landscape":
+                # Landscape: arrange images side by side (horizontal)
+                grid_rows, grid_cols = 1, num_images_per_page
+            else:
+                # Portrait: arrange images in a grid (2 columns for better layout)
+                grid_cols = 2
+                grid_rows = int(np.ceil(num_images_per_page / grid_cols))
+            
+            # Add margins around the entire grid
+            margin = 30
+            available_width = page_size[0] - 2 * margin
+            available_height = page_size[1] - 2 * margin
+            
+            # Calculate cell size accounting for gaps in both directions
+            total_gaps_w = (grid_cols - 1) * gap
+            total_gaps_h = (grid_rows - 1) * gap
+            cell_w = (available_width - total_gaps_w) // grid_cols
+            cell_h = (available_height - total_gaps_h) // grid_rows
+            
+            for idx, img in enumerate(imgs):
+                row = idx // grid_cols
+                col = idx % grid_cols
+                
+                # Calculate position with gaps and margins
+                x = margin + col * (cell_w + gap)
+                y = margin + row * (cell_h + gap)
+                
+                # Resize image to fit cell while maintaining aspect ratio
+                img_aspect = img.size[0] / img.size[1]
+                cell_aspect = cell_w / cell_h
+                
+                if img_aspect > cell_aspect:
+                    # Image is wider than cell - fit to width
+                    new_width = cell_w
+                    new_height = int(cell_w / img_aspect)
+                    # Center vertically in cell
+                    y_offset = (cell_h - new_height) // 2
+                    y += y_offset
+                else:
+                    # Image is taller than cell - fit to height
+                    new_height = cell_h
+                    new_width = int(cell_h * img_aspect)
+                    # Center horizontally in cell
+                    x_offset = (cell_w - new_width) // 2
+                    x += x_offset
+                
+                img_resized = img.resize((new_width, new_height), Image.LANCZOS)
+                page.paste(img_resized, (x, y))
+        
+        pages.append(page)
+
     pdf_buffer = io.BytesIO()
-    images[0].save(
+    pages[0].save(
         pdf_buffer,
         "PDF",
         resolution=100.0,
         save_all=True,
-        append_images=images[1:]
+        append_images=pages[1:]
     )
     pdf_buffer.seek(0)
     return pdf_buffer.getvalue()
@@ -144,7 +239,11 @@ if uploaded_file:
     if st.session_state.original_images is None:
         with st.spinner("Analyzing PDF... This may take a moment."):
             pdf_bytes = uploaded_file.read()
-            st.session_state.original_images = convert_from_bytes(pdf_bytes, dpi=72)
+            st.session_state.original_images = convert_from_bytes(
+                pdf_bytes, 
+                dpi=72, 
+                poppler_path=r"C:\Program Files\poppler-24.08.0\Library\bin"
+            )
     
     images = st.session_state.original_images
     original_page_data = analyze_pdf_ink_usage(images)
@@ -162,6 +261,11 @@ if uploaded_file:
         duplex = st.checkbox("Double-sided Printing (Duplex)", value=True)
         paper_size = st.selectbox("Paper Size", ["A4", "A3"])
         binding = st.selectbox("Binding Type", ["None", "Spiral", "Thermal"])
+        # --- NEW FIELDS ---
+        num_images_per_page = st.number_input("Number of Images per page", min_value=1, value=1)
+        page_orientation = st.selectbox("Page Orientation", ["Portrait", "Landscape"])
+        gap_between_images = st.number_input("Gap between images (pixels)", min_value=0, value=10)
+        # --- END NEW FIELDS ---
 
     with col2:
         st.subheader("🎨 Advanced Color Removal")
@@ -190,34 +294,31 @@ if uploaded_file:
     if st.button("Calculate Cost & Generate New PDF", type="primary"):
         hex_codes_input = st.session_state.hex_codes_input
         original_costs = calculate_total_cost(original_page_data, copies, duplex, binding, is_color, paper_size)
-        
         target_rgbs = [hex_to_rgb(code) for code in hex_codes_input.split()]
         target_rgbs = [rgb for rgb in target_rgbs if rgb is not None]
-        
         ink_reduction_percent = 0
         modified_images = images # Default to original images
-
         if target_rgbs:
             with st.spinner("Removing colors and recalculating..."):
                 modified_images = [remove_colors_from_image(img, target_rgbs, threshold) for img in images]
                 modified_page_data = analyze_pdf_ink_usage(modified_images)
                 new_costs = calculate_total_cost(modified_page_data, copies, duplex, binding, is_color, paper_size)
-                st.session_state.new_pdf_bytes = generate_pdf_from_images(modified_images)
-
+                st.session_state.new_pdf_bytes = generate_pdf_from_images(
+                    modified_images, num_images_per_page, page_orientation, gap_between_images
+                )
                 # --- NEW: Calculate percentage change in non-white pixels ---
                 original_ink = sum(count_non_white_pixels(img) for img in images)
                 modified_ink = sum(count_non_white_pixels(img) for img in modified_images)
-                
                 if original_ink > 0:
                     ink_reduction_percent = ((modified_ink - original_ink) / original_ink) * 100
                 # --- END OF NEW CALCULATION ---
         else:
             new_costs = original_costs
-            st.session_state.new_pdf_bytes = None
-
+            st.session_state.new_pdf_bytes = generate_pdf_from_images(
+                images, num_images_per_page, page_orientation, gap_between_images
+            )
         st.subheader("💰 Cost & Ink Comparison")
         res_col1, res_col2 = st.columns(2)
-        
         with res_col1:
             st.markdown("#### Original PDF")
             st.metric("Total Cost", f"₹{original_costs['Total Cost']:.2f}")
@@ -226,20 +327,67 @@ if uploaded_file:
                 st.write(f"Paper Used: {original_costs['Paper Used']} sheets")
                 st.write(f"Binding Cost: ₹{original_costs['Binding Cost']:.2f}")
                 st.write(f"Total Page Cost: ₹{original_costs['Total Page Cost']:.2f}")
-
         with res_col2:
             st.markdown("#### Modified PDF")
             st.metric("New Total Cost", f"₹{new_costs['Total Cost']:.2f}", delta=f"₹{new_costs['Total Cost'] - original_costs['Total Cost']:.2f}")
-            # --- NEW: Display the ink reduction percentage ---
             st.metric("Ink Reduction (Non-White Pixels)", f"{ink_reduction_percent:.2f}%")
-            # --- END OF NEW DISPLAY ---
-            
             if st.session_state.get('new_pdf_bytes'):
+                # --- Enhanced PDF Preview ---
+                st.subheader("📄 PDF Preview")
+                
+                try:
+                    from pdf2image import convert_from_bytes
+                    # Convert only first few pages for faster preview (max 3 pages)
+                    max_preview_pages = min(3, len(images) // num_images_per_page + 1)
+                    preview_images = convert_from_bytes(
+                        st.session_state.new_pdf_bytes, 
+                        dpi=150,
+                        first_page=1,
+                        last_page=max_preview_pages,
+                        poppler_path=r"C:\Program Files\poppler-24.08.0\Library\bin"
+                    )
+                    
+                    # Show page navigation
+                    total_pages = len(images) // num_images_per_page + (1 if len(images) % num_images_per_page > 0 else 0)
+                    preview_pages = len(preview_images)
+                    
+                    if total_pages > 1:
+                        page_num = st.selectbox(
+                            f"Select page to preview (Showing first {preview_pages} of {total_pages} pages)",
+                            range(1, preview_pages + 1),
+                            format_func=lambda x: f"Page {x}"
+                        ) - 1
+                    else:
+                        page_num = 0
+                    
+                    # Display selected page
+                    st.image(
+                        preview_images[page_num], 
+                        caption=f"Page {page_num + 1} of {total_pages} (Preview)",
+                        use_column_width=True
+                    )
+                    
+                    # Show page info
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Pages", total_pages)
+                    with col2:
+                        st.metric("Images per Page", num_images_per_page)
+                    with col3:
+                        st.metric("Orientation", page_orientation)
+                        
+                    if total_pages > preview_pages:
+                        st.info(f"📄 Showing preview of first {preview_pages} pages. Download the PDF to see all {total_pages} pages.")
+                        
+                except Exception as e:
+                    st.error(f"Preview not available: {e}")
+                    st.info("You can still download the PDF below.")
+                
+                # Download button
                 st.download_button(
-                    # Download Modified PDF
-                    label="📥 Download Modified PDF",
+                    label="📥 Download Generated PDF",
                     data=st.session_state.new_pdf_bytes,
-                    file_name="modified_document.pdf",
+                    file_name=f"generated_document_{page_orientation.lower()}_{num_images_per_page}images.pdf",
                     mime="application/pdf"
                 )
 
