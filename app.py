@@ -5,7 +5,7 @@ import numpy as np
 import io 
 from pdf2image import convert_from_bytes
 
-# images = convert_from_bytes(pdf_bytes, dpi=72, poppler_path=r"C:\Users\HP\Downloads\Release-24.08.0-0\poppler-24.08.0\bin")
+# images = convert_from_bytes(pdf_bytes, dpi=72)
 
 
 # --- Helper function to convert hex to RGB ---
