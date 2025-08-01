@@ -241,8 +241,7 @@ if uploaded_file:
             pdf_bytes = uploaded_file.read()
             st.session_state.original_images = convert_from_bytes(
                 pdf_bytes, 
-                dpi=72, 
-                poppler_path=r"C:\Program Files\poppler-24.08.0\Library\bin"
+                dpi=72
             )
     
     images = st.session_state.original_images
