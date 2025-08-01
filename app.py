@@ -343,8 +343,7 @@ if uploaded_file:
                         st.session_state.new_pdf_bytes, 
                         dpi=150,
                         first_page=1,
-                        last_page=max_preview_pages,
-                        poppler_path=r"C:\Program Files\poppler-24.08.0\Library\bin"
+                        last_page=max_preview_pages
                     )
                     
                     # Show page navigation
