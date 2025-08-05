@@ -38,8 +38,9 @@ def remove_colors_from_image(image, colors_to_remove, threshold):
     return Image.fromarray(arr.astype('uint8'), 'RGB')
 
 # --- Function to generate a new PDF from modified images ---
-def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrait", gap=10):
-    """Saves a list of PIL Images to a PDF in memory, arranging images per page and orientation."""
+def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrait", gap=10, margins=None, apply_margins_to_odd_pages=False):
+    """Saves a list of PIL Images to a PDF in memory, arranging images per page and orientation.
+    Supports custom margins for odd pages if specified."""
     if not images:
         return None
 
@@ -55,6 +56,8 @@ def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrai
     pages = []
     for i in range(0, len(images), num_images_per_page):
         imgs = images[i:i+num_images_per_page]
+        page_index = i // num_images_per_page
+        is_odd_page = (page_index % 2 == 0)  # 0-indexed, so page 1 is index 0
         
         # Create a blank page
         page = Image.new("RGB", page_size, (255, 255, 255))
@@ -62,10 +65,23 @@ def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrai
         if num_images_per_page == 1:
             # Single image per page - center it
             img = imgs[0]
+            
+            # Default margins
+            margin_top = 50
+            margin_bottom = 50
+            margin_left = 50
+            margin_right = 50
+            
+            # Apply custom margins for odd pages if specified
+            if margins and apply_margins_to_odd_pages and is_odd_page:
+                margin_top = int(margins.get("top", 50))
+                margin_bottom = int(margins.get("bottom", 50))
+                margin_left = int(margins.get("left", 50))
+                margin_right = int(margins.get("right", 50))
+            
             # Calculate scaling to fit page with margins
-            margin = 50
-            max_width = page_size[0] - 2 * margin
-            max_height = page_size[1] - 2 * margin
+            max_width = page_size[0] - margin_left - margin_right
+            max_height = page_size[1] - margin_top - margin_bottom
             
             # Calculate scale to fit image within page bounds
             scale_w = max_width / img.size[0]
@@ -76,9 +92,9 @@ def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrai
             new_height = int(img.size[1] * scale)
             img_resized = img.resize((new_width, new_height), Image.LANCZOS)
             
-            # Center the image
-            x = (page_size[0] - new_width) // 2
-            y = (page_size[1] - new_height) // 2
+            # Position the image according to margins
+            x = margin_left + (max_width - new_width) // 2
+            y = margin_top + (max_height - new_height) // 2
             page.paste(img_resized, (x, y))
             
         else:
@@ -91,10 +107,22 @@ def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrai
                 grid_cols = 2
                 grid_rows = int(np.ceil(num_images_per_page / grid_cols))
             
+            # Default margins
+            margin_top = 30
+            margin_bottom = 30
+            margin_left = 30
+            margin_right = 30
+            
+            # Apply custom margins for odd pages if specified
+            if margins and apply_margins_to_odd_pages and is_odd_page:
+                margin_top = int(margins.get("top", 30))
+                margin_bottom = int(margins.get("bottom", 30))
+                margin_left = int(margins.get("left", 30))
+                margin_right = int(margins.get("right", 30))
+            
             # Add margins around the entire grid
-            margin = 30
-            available_width = page_size[0] - 2 * margin
-            available_height = page_size[1] - 2 * margin
+            available_width = page_size[0] - margin_left - margin_right
+            available_height = page_size[1] - margin_top - margin_bottom
             
             # Calculate cell size accounting for gaps in both directions
             total_gaps_w = (grid_cols - 1) * gap
@@ -107,8 +135,8 @@ def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrai
                 col = idx % grid_cols
                 
                 # Calculate position with gaps and margins
-                x = margin + col * (cell_w + gap)
-                y = margin + row * (cell_h + gap)
+                x = margin_left + col * (cell_w + gap)
+                y = margin_top + row * (cell_h + gap)
                 
                 # Resize image to fit cell while maintaining aspect ratio
                 img_aspect = img.size[0] / img.size[1]
@@ -287,6 +315,22 @@ if uploaded_file:
         )
         
         threshold = st.slider("Color Matching Sensitivity (Threshold)", 0, 100, 30)
+        
+        # Margin settings for odd pages
+        st.subheader("📏 Margin Settings for Odd Pages")
+        st.info("Set custom margins for odd-numbered pages (1, 3, 5...) to improve image clarity. Use positive, zero, or negative values in pixels.")
+        
+        margin_col1, margin_col2 = st.columns(2)
+        
+        with margin_col1:
+            margin_top = st.number_input("Top Margin (pixels)", value=50, step=1)
+            margin_bottom = st.number_input("Bottom Margin (pixels)", value=50, step=1)
+        
+        with margin_col2:
+            margin_left = st.number_input("Left Margin (pixels)", value=50, step=1)
+            margin_right = st.number_input("Right Margin (pixels)", value=50, step=1)
+            
+        apply_margins = st.checkbox("Apply custom margins to odd pages", value=False)
 
     st.markdown("---")
 
@@ -302,8 +346,17 @@ if uploaded_file:
                 modified_images = [remove_colors_from_image(img, target_rgbs, threshold) for img in images]
                 modified_page_data = analyze_pdf_ink_usage(modified_images)
                 new_costs = calculate_total_cost(modified_page_data, copies, duplex, binding, is_color, paper_size)
+                # Create margins dictionary
+                margins = {
+                    "top": margin_top,
+                    "bottom": margin_bottom,
+                    "left": margin_left,
+                    "right": margin_right
+                }
+                
                 st.session_state.new_pdf_bytes = generate_pdf_from_images(
-                    modified_images, num_images_per_page, page_orientation, gap_between_images
+                    modified_images, num_images_per_page, page_orientation, gap_between_images,
+                    margins=margins, apply_margins_to_odd_pages=apply_margins
                 )
                 # --- NEW: Calculate percentage change in non-white pixels ---
                 original_ink = sum(count_non_white_pixels(img) for img in images)
@@ -313,8 +366,17 @@ if uploaded_file:
                 # --- END OF NEW CALCULATION ---
         else:
             new_costs = original_costs
+            # Create margins dictionary
+            margins = {
+                "top": margin_top,
+                "bottom": margin_bottom,
+                "left": margin_left,
+                "right": margin_right
+            }
+            
             st.session_state.new_pdf_bytes = generate_pdf_from_images(
-                images, num_images_per_page, page_orientation, gap_between_images
+                images, num_images_per_page, page_orientation, gap_between_images,
+                margins=margins, apply_margins_to_odd_pages=apply_margins
             )
         st.subheader("💰 Cost & Ink Comparison")
         res_col1, res_col2 = st.columns(2)
