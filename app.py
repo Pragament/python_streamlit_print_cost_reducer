@@ -3,10 +3,6 @@ from pdf2image import convert_from_bytes
 from PIL import Image
 import numpy as np
 import io 
-from pdf2image import convert_from_bytes
-
-# images = convert_from_bytes(pdf_bytes, dpi=72)
-
 
 # --- Helper function to convert hex to RGB ---
 def hex_to_rgb(hex_code):
@@ -37,10 +33,67 @@ def remove_colors_from_image(image, colors_to_remove, threshold):
     
     return Image.fromarray(arr.astype('uint8'), 'RGB')
 
+# --- Function to crop image from specified side ---
+def crop_image(image, side, crop_pixels):
+    """
+    Crops an image from the specified side by the given number of pixels.
+    side can be 'top', 'bottom', 'left', or 'right'.
+    crop_pixels should be a positive number representing pixels to crop.
+    """
+    if crop_pixels <= 0:
+        return image
+    
+    width, height = image.size
+    if crop_pixels >= (height if side in ['top', 'bottom'] else width):
+        return Image.new("RGB", (width, 1) if side in ['top', 'bottom'] else (1, height), (255, 255, 255))
+    
+    actual_crop = min(crop_pixels, height - 1 if side in ['top', 'bottom'] else width - 1)
+    if side == 'top':
+        return image.crop((0, actual_crop, width, height))
+    elif side == 'bottom':
+        return image.crop((0, 0, width, height - actual_crop))
+    elif side == 'left':
+        return image.crop((actual_crop, 0, width, height))
+    elif side == 'right':
+        return image.crop((0, 0, width - actual_crop, height))
+    return image
+
+def apply_margins_and_zoom(img, top_margin, bottom_margin, left_margin, right_margin):
+    """
+    Applies cropping if margins are negative, then resizes back to original size.
+    Positive margins are ignored here (handled by your existing placement logic).
+    """
+    width, height = img.size
+
+    # Crop from top if negative
+    if top_margin < 0:
+        crop_pixels = abs(top_margin)
+        img = crop_image(img, 'top', crop_pixels)
+
+    # Crop from bottom if negative
+    if bottom_margin < 0:
+        crop_pixels = abs(bottom_margin)
+        img = crop_image(img, 'bottom', crop_pixels)
+
+    # Crop from left if negative
+    if left_margin < 0:
+        crop_pixels = abs(left_margin)
+        img = crop_image(img, 'left', crop_pixels)
+
+    # Crop from right if negative
+    if right_margin < 0:
+        crop_pixels = abs(right_margin)
+        img = crop_image(img, 'right', crop_pixels)
+
+    return img
+
 # --- Function to generate a new PDF from modified images ---
-def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrait", gap=10, margins=None, apply_margins_to_odd_pages=False):
+def generate_pdf_from_images(
+    images, num_images_per_page=1, orientation="Portrait", gap=0, margins=None,
+    apply_margins_to_odd_pages=False, apply_to_even_pages=False
+):
     """Saves a list of PIL Images to a PDF in memory, arranging images per page and orientation.
-    Supports custom margins for odd pages if specified."""
+    If any margin is negative, the affected image is cropped and enlarged to fill the page."""
     if not images:
         return None
 
@@ -49,124 +102,147 @@ def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrai
         "Portrait": {"A4": (595, 842), "A3": (842, 1191)},
         "Landscape": {"A4": (842, 595), "A3": (1191, 842)}
     }
-    
-    # Use A4 size for now (can be made configurable)
     page_size = page_sizes[orientation]["A4"]
-    
     pages = []
     for i in range(0, len(images), num_images_per_page):
         imgs = images[i:i+num_images_per_page]
-        page_index = i // num_images_per_page
-        is_odd_page = (page_index % 2 == 0)  # 0-indexed, so page 1 is index 0
-        
-        # Create a blank page
         page = Image.new("RGB", page_size, (255, 255, 255))
-        
         if num_images_per_page == 1:
-            # Single image per page - center it
             img = imgs[0]
-            
-            # Default margins
-            margin_top = 50
-            margin_bottom = 50
-            margin_left = 50
-            margin_right = 50
-            
-            # Apply custom margins for odd pages if specified
-            if margins and apply_margins_to_odd_pages and is_odd_page:
-                margin_top = int(margins.get("top", 50))
-                margin_bottom = int(margins.get("bottom", 50))
-                margin_left = int(margins.get("left", 50))
-                margin_right = int(margins.get("right", 50))
-            
-            # Calculate scaling to fit page with margins
-            max_width = page_size[0] - margin_left - margin_right
-            max_height = page_size[1] - margin_top - margin_bottom
-            
-            # Calculate scale to fit image within page bounds
-            scale_w = max_width / img.size[0]
-            scale_h = max_height / img.size[1]
-            scale = min(scale_w, scale_h)
-            
-            new_width = int(img.size[0] * scale)
-            new_height = int(img.size[1] * scale)
-            img_resized = img.resize((new_width, new_height), Image.LANCZOS)
-            
-            # Position the image according to margins
-            x = margin_left + (max_width - new_width) // 2
-            y = margin_top + (max_height - new_height) // 2
-            page.paste(img_resized, (x, y))
-            
+            is_odd_page = True
+            is_even_page = False
+            # Check for negative margins to apply cropping and full-page scaling
+            if margins and any(m < 0 for m in [margins.get("top", 0), margins.get("bottom", 0), margins.get("left", 0), margins.get("right", 0)]):
+                margin_top = int(margins.get("top", 0))
+                margin_bottom = int(margins.get("bottom", 0))
+                margin_left = int(margins.get("left", 0))
+                margin_right = int(margins.get("right", 0))
+                img = apply_margins_and_zoom(img, margin_top, margin_bottom, margin_left, margin_right)
+                # Scale to fill page
+                available_width = page_size[0] - (margin_left + margin_right)
+                available_height = page_size[1] - (margin_top + margin_bottom)
+                img_aspect = img.width / img.height
+                available_aspect = available_width / available_height
+                if img_aspect > available_aspect:
+                    scale = available_height / img.height
+                    new_width = int(img.width * scale)
+                    new_height = available_height
+                    img_resized = img.resize((new_width, new_height), Image.LANCZOS)
+                    x = margin_left
+                    y = margin_top
+                else:
+                    scale = available_width / img.width
+                    new_width = available_width
+                    new_height = int(img.height * scale)
+                    img_resized = img.resize((new_width, new_height), Image.LANCZOS)
+                    x = margin_left
+                    y = margin_top
+                page.paste(img_resized, (x, y))
+            else:
+                if margins and (apply_margins_to_odd_pages and is_odd_page) or (apply_to_even_pages and is_even_page):
+                    margin_top = int(margins.get("top", 0))
+                    margin_bottom = int(margins.get("bottom", 0))
+                    margin_left = int(margins.get("left", 0))
+                    margin_right = int(margins.get("right", 0))
+                    img = apply_margins_and_zoom(img, margin_top, margin_bottom, margin_left, margin_right)
+                max_width = page_size[0]
+                max_height = page_size[1]
+                scale_w = max_width / img.size[0]
+                scale_h = max_height / img.size[1]
+                scale = min(scale_w, scale_h)
+                new_width = int(img.size[0] * scale)
+                new_height = int(img.size[1] * scale)
+                img_resized = img.resize((new_width, new_height), Image.LANCZOS)
+                x = (page_size[0] - new_width) // 2
+                y = (page_size[1] - new_height) // 2
+                page.paste(img_resized, (x, y))
         else:
-            # Multiple images per page - arrange based on orientation
+            # For multiple images per page
             if orientation == "Landscape":
-                # Landscape: arrange images side by side (horizontal)
                 grid_rows, grid_cols = 1, num_images_per_page
             else:
-                # Portrait: arrange images in a grid (2 columns for better layout)
                 grid_cols = 2
                 grid_rows = int(np.ceil(num_images_per_page / grid_cols))
-            
-            # Default margins
-            margin_top = 30
-            margin_bottom = 30
-            margin_left = 30
-            margin_right = 30
-            
-            # Apply custom margins for odd pages if specified
-            if margins and apply_margins_to_odd_pages and is_odd_page:
-                margin_top = int(margins.get("top", 30))
-                margin_bottom = int(margins.get("bottom", 30))
-                margin_left = int(margins.get("left", 30))
-                margin_right = int(margins.get("right", 30))
-            
-            # Add margins around the entire grid
-            available_width = page_size[0] - margin_left - margin_right
-            available_height = page_size[1] - margin_top - margin_bottom
-            
-            # Calculate cell size accounting for gaps in both directions
+            if margins:
+                margin_top = int(margins.get("top", 0))
+                margin_bottom = int(margins.get("bottom", 0))
+                margin_left = int(margins.get("left", 0))
+                margin_right = int(margins.get("right", 0))
+            else:
+                margin_top = 30
+                margin_bottom = 30
+                margin_left = 30
+                margin_right = 30
+            available_width = page_size[0] - (margin_left + margin_right)
+            available_height = page_size[1] - (margin_top + margin_bottom)
             total_gaps_w = (grid_cols - 1) * gap
             total_gaps_h = (grid_rows - 1) * gap
             cell_w = (available_width - total_gaps_w) // grid_cols
             cell_h = (available_height - total_gaps_h) // grid_rows
-            
             for idx, img in enumerate(imgs):
                 row = idx // grid_cols
                 col = idx % grid_cols
-                
-                # Calculate position with gaps and margins
-                x = margin_left + col * (cell_w + gap)
-                y = margin_top + row * (cell_h + gap)
-                
-                # Resize image to fit cell while maintaining aspect ratio
-                img_aspect = img.size[0] / img.size[1]
-                cell_aspect = cell_w / cell_h
-                
-                if img_aspect > cell_aspect:
-                    # Image is wider than cell - fit to width
-                    new_width = cell_w
-                    new_height = int(cell_w / img_aspect)
-                    # Center vertically in cell
-                    y_offset = (cell_h - new_height) // 2
-                    y += y_offset
-                else:
-                    # Image is taller than cell - fit to height
-                    new_height = cell_h
-                    new_width = int(cell_h * img_aspect)
-                    # Center horizontally in cell
-                    x_offset = (cell_w - new_width) // 2
-                    x += x_offset
-                
-                img_resized = img.resize((new_width, new_height), Image.LANCZOS)
-                page.paste(img_resized, (x, y))
-        
-        pages.append(page)
+                cell_x = margin_left + col * (cell_w + gap)
+                cell_y = margin_top + row * (cell_h + gap)
 
+                # Apply margins or specific crop
+                current_img = img
+                if margins and ((apply_margins_to_odd_pages and col % 2 == 0) or (apply_to_even_pages and col % 2 == 1)):
+                    margin_top = int(margins.get("top", 0))
+                    margin_bottom = int(margins.get("bottom", 0))
+                    margin_left = int(margins.get("left", 0))
+                    margin_right = int(margins.get("right", 0))
+                    current_img = apply_margins_and_zoom(img, margin_top, margin_bottom, margin_left, margin_right)
+
+                # Check for negative margins to apply cropping and full-page scaling for this image
+                if margins and any(m < 0 for m in [margins.get("top", 0), margins.get("bottom", 0), margins.get("left", 0), margins.get("right", 0)]):
+                    margin_top = int(margins.get("top", 0))
+                    margin_bottom = int(margins.get("bottom", 0))
+                    margin_left = int(margins.get("left", 0))
+                    margin_right = int(margins.get("right", 0))
+                    current_img = apply_margins_and_zoom(current_img, margin_top, margin_bottom, margin_left, margin_right)
+                    # Scale to fill cell
+                    img_aspect = current_img.width / current_img.height
+                    cell_aspect = cell_w / cell_h
+                    if img_aspect > cell_aspect:
+                        scale = cell_h / current_img.height
+                        new_width = int(current_img.width * scale)
+                        new_height = cell_h
+                        img_resized = current_img.resize((new_width, new_height), Image.LANCZOS)
+                        left = (new_width - cell_w) // 2
+                        img_cropped = img_resized.crop((left, 0, left + cell_w, cell_h))
+                    else:
+                        scale = cell_w / current_img.width
+                        new_width = cell_w
+                        new_height = int(current_img.height * scale)
+                        img_resized = current_img.resize((new_width, new_height), Image.LANCZOS)
+                        top = 0
+                        img_cropped = img_resized.crop((0, top, cell_w, top + cell_h))
+                    page.paste(img_cropped, (cell_x, cell_y))
+                else:
+                    # Normal mode: Scale to fit cell
+                    img_aspect = current_img.width / current_img.height
+                    cell_aspect = cell_w / cell_h
+                    if img_aspect > cell_aspect:
+                        new_width = cell_w
+                        new_height = int(cell_w / img_aspect)
+                        y_offset = (cell_h - new_height) // 2
+                        x = cell_x
+                        y = cell_y + y_offset
+                    else:
+                        new_height = cell_h
+                        new_width = int(cell_h * img_aspect)
+                        x_offset = (cell_w - new_width) // 2
+                        x = cell_x + x_offset
+                        y = cell_y
+                    img_resized = current_img.resize((new_width, new_height), Image.LANCZOS)
+                    page.paste(img_resized, (x, y))
+        pages.append(page)
     pdf_buffer = io.BytesIO()
     pages[0].save(
         pdf_buffer,
         "PDF",
-        resolution=100.0,
+        resolution=300.0,  # Increased to 300 DPI for high quality
         save_all=True,
         append_images=pages[1:]
     )
@@ -274,8 +350,9 @@ if uploaded_file:
     
     images = st.session_state.original_images
     original_page_data = analyze_pdf_ink_usage(images)
+    total_images = len(images)
     
-    st.success(f"Analyzed {len(original_page_data)} pages. You can now set printing options and calculate the cost.")
+    st.success(f"Analyzed {len(original_page_data)} pages with {total_images} images. You can now set printing options and calculate the cost.")
     st.markdown("---")
     
     col1, col2 = st.columns(2)
@@ -288,11 +365,9 @@ if uploaded_file:
         duplex = st.checkbox("Double-sided Printing (Duplex)", value=True)
         paper_size = st.selectbox("Paper Size", ["A4", "A3"])
         binding = st.selectbox("Binding Type", ["None", "Spiral", "Thermal"])
-        # --- NEW FIELDS ---
         num_images_per_page = st.number_input("Number of Images per page", min_value=1, value=1)
         page_orientation = st.selectbox("Page Orientation", ["Portrait", "Landscape"])
-        gap_between_images = st.number_input("Gap between images (pixels)", min_value=0, value=10)
-        # --- END NEW FIELDS ---
+        gap_between_images = st.number_input("Gap between images (pixels)", min_value=0, value=10, help="Sets the gap between images")
 
     with col2:
         st.subheader("🎨 Advanced Color Removal")
@@ -316,10 +391,13 @@ if uploaded_file:
         
         threshold = st.slider("Color Matching Sensitivity (Threshold)", 0, 100, 30)
         
-        # Margin settings for odd pages
-        st.subheader("📏 Margin Settings for Odd Pages")
-        st.info("Set custom margins for odd-numbered pages (1, 3, 5...) to improve image clarity. Use positive, zero, or negative values in pixels.")
+        # Margin and crop settings
+        st.subheader("📏 Custom Margin and Crop Settings")
+        st.info("Set custom margins for specific image positions. Use negative values (e.g., -250) to crop from the corresponding side, and the image will be enlarged to fill the page.")
         
+        # Margin settings
+        st.markdown("**Custom Margin Settings:**")
+        st.info("Negative margins will crop the image from the corresponding side and enlarge it to fill the page.")
         margin_col1, margin_col2 = st.columns(2)
         
         with margin_col1:
@@ -329,8 +407,15 @@ if uploaded_file:
         with margin_col2:
             margin_left = st.number_input("Left Margin (pixels)", value=50, step=1)
             margin_right = st.number_input("Right Margin (pixels)", value=50, step=1)
-            
-        apply_margins = st.checkbox("Apply custom margins to odd pages", value=False)
+        
+        # Allow users to specify odd or even pages more explicitly
+        page_type = st.radio("Apply custom margins to:", ["Odd Pages (Left Side)", "Even Pages (Right Side)", "Both Odd and Even Pages"], index=0)
+        apply_margins = st.checkbox("Enable custom margins", value=False)
+        
+        # Show warning for negative margins
+        if any(m < 0 for m in [margin_top, margin_bottom, margin_left, margin_right]):
+            negative_sides = [s for s, m in [("top", margin_top), ("bottom", margin_bottom), ("left", margin_left), ("right", margin_right)] if m < 0]
+            st.warning(f"✂️ **Negative margin(s) detected ({', '.join(negative_sides)})**: This will crop the image from the corresponding side(s) and enlarge it to fill the page.")
 
     st.markdown("---")
 
@@ -354,9 +439,14 @@ if uploaded_file:
                     "right": margin_right
                 }
                 
+                # Determine which page type to apply margins to
+                apply_to_odd = apply_margins and page_type == "Odd Pages (Left Side)"
+                apply_to_even = apply_margins and page_type == "Even Pages (Right Side)"
+                apply_to_both = apply_margins and page_type == "Both Odd and Even Pages"
+                
                 st.session_state.new_pdf_bytes = generate_pdf_from_images(
                     modified_images, num_images_per_page, page_orientation, gap_between_images,
-                    margins=margins, apply_margins_to_odd_pages=apply_margins
+                    margins=margins, apply_margins_to_odd_pages=apply_to_odd, apply_to_even_pages=apply_to_even
                 )
                 # --- NEW: Calculate percentage change in non-white pixels ---
                 original_ink = sum(count_non_white_pixels(img) for img in images)
@@ -374,9 +464,14 @@ if uploaded_file:
                 "right": margin_right
             }
             
+            # Determine which page type to apply margins to
+            apply_to_odd = apply_margins and page_type == "Odd Pages (Left Side)"
+            apply_to_even = apply_margins and page_type == "Even Pages (Right Side)"
+            apply_to_both = apply_margins and page_type == "Both Odd and Even Pages"
+            
             st.session_state.new_pdf_bytes = generate_pdf_from_images(
                 images, num_images_per_page, page_orientation, gap_between_images,
-                margins=margins, apply_margins_to_odd_pages=apply_margins
+                margins=margins, apply_margins_to_odd_pages=apply_to_odd, apply_to_even_pages=apply_to_even
             )
         st.subheader("💰 Cost & Ink Comparison")
         res_col1, res_col2 = st.columns(2)
