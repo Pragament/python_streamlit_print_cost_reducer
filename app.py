@@ -3,7 +3,7 @@ from pdf2image import convert_from_bytes
 from PIL import Image
 import numpy as np
 import io
-import base64
+from streamlit_image_coordinates import streamlit_image_coordinates
 
 # --- Helper function to convert hex to RGB ---
 def hex_to_rgb(hex_code):
@@ -32,16 +32,14 @@ def remove_colors_from_image(image, colors_to_remove, threshold):
 
     arr[final_mask] = [255, 255, 255]
     
-    return Image.fromarray(arr.astype('uint8'), 'RGB')
+    return Image.fromarray(arr.astype('uint8'))
 
 # --- Function to generate a new PDF from modified images ---
 def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrait", gap=10, margins=None, apply_margins_to_odd_pages=False):
-    """Saves a list of PIL Images to a PDF in memory, arranging images per page and orientation.
-    Supports custom margins for odd pages if specified."""
+    """Saves a list of PIL Images to a PDF in memory, arranging images per page and orientation."""
     if not images:
         return None
 
-    # Standard page sizes in pixels (at 100 DPI)
     page_sizes = {
         "Portrait": {"A4": (595, 842), "A3": (842, 1191)},
         "Landscape": {"A4": (842, 595), "A3": (1191, 842)}
@@ -214,6 +212,21 @@ def suggest_savings(page_data, is_color, duplex, paper_size, copies):
         suggestions.append("Switch to A4 paper to reduce paper cost by approx. 33% per page.")
     return suggestions
 
+# --- Function to get pixel color from image ---
+def get_pixel_color(image, x, y):
+    """Gets the RGB color of a pixel at (x, y) and converts it to hex."""
+    try:
+        img_array = np.array(image.convert("RGB"))
+        if 0 <= x < img_array.shape[1] and 0 <= y < img_array.shape[0]:
+            r, g, b = img_array[y, x]
+            hex_code = f"#{r:02x}{g:02x}{b:02x}".upper()
+            return hex_code, (r, g, b)
+        else:
+            return None, None
+    except Exception as e:
+        st.error(f"Error getting pixel color: {e}")
+        return None, None
+
 # --- Streamlit App ---
 st.set_page_config(layout="wide")
 st.title("🧾 Advanced PDF Printing Cost Estimator")
@@ -224,15 +237,21 @@ if 'original_images' not in st.session_state:
 if 'hex_codes_input' not in st.session_state:
     st.session_state.hex_codes_input = ""
 if 'picked_color' not in st.session_state:
-    st.session_state.picked_color = None
+    st.session_state.picked_color = "None"
+if 'picked_coords' not in st.session_state:
+    st.session_state.picked_coords = (0, 0)
 
 uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
 
 if uploaded_file:
     if st.session_state.original_images is None:
         with st.spinner("Analyzing PDF... This may take a moment."):
-            pdf_bytes = uploaded_file.read()
-            st.session_state.original_images = convert_from_bytes(pdf_bytes, dpi=72)
+            try:
+                pdf_bytes = uploaded_file.read()
+                st.session_state.original_images = convert_from_bytes(pdf_bytes, dpi=72)
+            except Exception as e:
+                st.error(f"Failed to process PDF: {e}")
+                st.stop()
     
     images = st.session_state.original_images
     original_page_data = analyze_pdf_ink_usage(images)
@@ -242,115 +261,54 @@ if uploaded_file:
     
     # --- Pixel Color Picker Section ---
     st.subheader("🎨 Pixel Color Picker")
-    st.info("Select a page and click on the image to pick a color at specific coordinates. The hex code will be added to the 'Colors to Remove' text area.")
+    st.info("Select a page, click on the image to pick a color, and use the button to add it to the 'Colors to Remove' text area.")
 
     page_options = [f"Page {i+1}" for i in range(len(images))]
     selected_page = st.selectbox("Select Page to Pick Color", page_options)
     page_index = page_options.index(selected_page)
 
-    # Convert the selected page image to base64 for HTML rendering
-    # Convert the selected page image to base64 for HTML rendering
+    # Get the image
     img = images[page_index]
-    buffered = io.BytesIO()
-    try:
-        img.save(buffered, format="PNG")
-        img_str = base64.b64encode(buffered.getvalue()).decode()
-    except Exception as e:
-        st.error(f"Failed to convert image to base64: {e}")
-        img_str = ""
 
-    # Debug: Save the image to disk to verify it’s valid
-    try:
-        img.save("debug_page.png")
-    except Exception as e:
-        st.error(f"Debug: Failed to save debug image: {e}")
+    # Resize image for display to improve performance
+    max_display_width = 600
+    scale = max_display_width / img.size[0]
+    display_size = (max_display_width, int(img.size[1] * scale))
+    img_display = img.resize(display_size, Image.LANCZOS)
 
-    # Define canvas_html with img_str
-    canvas_html = f"""
-    <div style="margin: 0; padding: 0;">
-        <canvas id="imageCanvas" style="max-width: 100%; height: auto; border: 2px solid #ccc; margin: 0; padding: 0;"></canvas>
-        <h1 style="color: white; margin: 2px 0; padding: 0; font-size: 17px;">Selected color: <span id="colorDisplay">None</span></h1>
-        <form id="colorForm" style="margin: 0; padding: 0;">
-            <input type="hidden" id="pickedColor" name="pickedColor">
-            <button type="submit" style="display:none;">Submit</button>
-        </form>
-    </div>
-    <script>
-        try {{
-            const canvas = document.getElementById('imageCanvas');
-            const ctx = canvas.getContext('2d');
-            const errorDisplay = document.getElementById('errorDisplay');
-            const img = new Image();
-            img.src = 'data:image/png;base64,{img_str}';
-            img.onload = function() {{
-                canvas.width = img.width;
-                canvas.height = img.height;
-                ctx.drawImage(img, 0, 0);
-                console.log('Image loaded successfully: ' + img.width + 'x' + img.height);
-                errorDisplay.textContent = '';
-            }};
-            img.onerror = function() {{
-                console.error('Failed to load image');
-                errorDisplay.textContent = 'Error: Failed to load image';
-            }};
-            canvas.addEventListener('click', function(event) {{
-                try {{
-                    const rect = canvas.getBoundingClientRect();
-                    const scaleX = canvas.width / rect.width;
-                    const scaleY = canvas.height / rect.height;
-                    const x = Math.floor((event.clientX - rect.left) * scaleX);
-                    const y = Math.floor((event.clientY - rect.top) * scaleY);
-                    const pixelData = ctx.getImageData(x, y, 1, 1).data;
-                    const hex = '#' + ('000000' + ((pixelData[0] << 16) | (pixelData[1] << 8) | pixelData[2]).toString(16)).slice(-6).toUpperCase();
-                    document.getElementById('colorDisplay').innerText = hex;
-                    document.getElementById('coordDisplay').innerText = 'X: ' + x + ', Y: ' + y;
-                    document.getElementById('pickedColor').value = hex;
-                    console.log('Color picked: ' + hex + ' at coordinates: ' + x + ', ' + y);
-                    if (window.parent.Streamlit) {{
-                        window.parent.Streamlit.setComponentValue({{hex: hex}});
-                    }} else {{
-                        console.error('Streamlit not found');
-                    }}
-                }} catch (e) {{
-                    console.error('Error in click handler: ' + e.message);
-                    errorDisplay.textContent = 'Error: ' + e.message;
-                }}
-            }});
-            document.getElementById('colorForm').addEventListener('submit', function(e) {{
-                e.preventDefault();
-            }});
-        }} catch (e) {{
-            console.error('Error initializing canvas: ' + e.message);
-            document.getElementById('errorDisplay').textContent = 'Error: ' + e.message;
-        }}
-    </script>
-    """
+    # Convert resized PIL Image to NumPy array for streamlit_image_coordinates
+    img_array = np.array(img_display.convert("RGB"))
 
-    # Render the canvas and capture the picked color
-    color_picked = st.components.v1.html(canvas_html, height=img.size[1] // 2, scrolling=True)
+    # Display image with clickable coordinates
+    value = streamlit_image_coordinates(img_array, key=f"img_coords_{page_index}", width=max_display_width)
 
-    # Handle the picked color and add it to the removal list immediately
-    if color_picked and isinstance(color_picked, dict) and 'hex' in color_picked:
-        picked_hex = color_picked['hex']
-        if picked_hex:
-            current_hex_codes = st.session_state.hex_codes_input.strip().split()
-            if picked_hex not in current_hex_codes:
-                st.session_state.hex_codes_input = st.session_state.hex_codes_input.strip() + f" {picked_hex}" if st.session_state.hex_codes_input else picked_hex
-                st.session_state.picked_color = picked_hex
-                st.success(f"Added color {picked_hex} to removal list")
-            else:
-                st.info(f"Color {picked_hex} is already in the removal list")
+    if value is not None:
+        # Scale coordinates back to original image size
+        x = int(value["x"] / scale)
+        y = int(value["y"] / scale)
+        hex_code, rgb = get_pixel_color(img, x, y)
+        if hex_code:
+            st.session_state.picked_color = hex_code
+            st.session_state.picked_coords = (x, y)
+            st.success(f"Selected color: {hex_code} at ({x}, {y})")
 
-    # Keep the rest of the manual addition logic as is:
-    if st.session_state.picked_color:
-        st.markdown(f"**Last Picked Color**: {st.session_state.picked_color}")
-        if st.button("Manually Add Last Picked Color to Removal List"):
+    # Display selected color
+    if st.session_state.picked_color != "None":
+        st.markdown(f"**Selected Color**: {st.session_state.picked_color} at Coordinates: X: {st.session_state.picked_coords[0]}, Y: {st.session_state.picked_coords[1]}")
+    else:
+        st.markdown("**Selected Color**: None")
+
+    # Add to Removal List button
+    if st.button("Add to Removal List"):
+        if st.session_state.picked_color != "None":
             current_hex_codes = st.session_state.hex_codes_input.strip().split()
             if st.session_state.picked_color not in current_hex_codes:
                 st.session_state.hex_codes_input = st.session_state.hex_codes_input.strip() + f" {st.session_state.picked_color}" if st.session_state.hex_codes_input else st.session_state.picked_color
-                st.success(f"Manually added color {st.session_state.picked_color} to removal list")
+                st.success(f"Added color {st.session_state.picked_color} to removal list")
             else:
                 st.info(f"Color {st.session_state.picked_color} is already in the removal list")
+        else:
+            st.error("No color selected. Click on the image to pick a color.")
 
     st.markdown("---")
     
@@ -370,7 +328,7 @@ if uploaded_file:
 
     with col2:
         st.subheader("🎨 Advanced Color Removal")
-        st.info("Use the picker, pixel selector, or type/paste hex codes directly.")
+        st.info("Use the pixel selector or type/paste hex codes directly.")
         
         picker_col, button_col = st.columns([1, 3])
         with picker_col:
@@ -476,7 +434,7 @@ if uploaded_file:
                     st.image(
                         preview_images[page_num], 
                         caption=f"Page {page_num + 1} of {total_pages} (Preview)",
-                        use_column_width=True
+                        use_container_width=True
                     )
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -498,7 +456,6 @@ if uploaded_file:
                     mime="application/pdf"
                 )
 
-        st.markdown("---")
         st.subheader("💡 General Savings Suggestions")
         for s in suggest_savings(original_page_data, is_color, duplex, paper_size, copies):
             st.info(s)
