@@ -3,7 +3,7 @@ from pdf2image import convert_from_bytes
 from PIL import Image
 import numpy as np
 import io 
-from pdf2image import convert_from_bytes
+from streamlit_image_coordinates import streamlit_image_coordinates
 
 # images = convert_from_bytes(pdf_bytes, dpi=72)
 
@@ -57,7 +57,7 @@ def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrai
     for i in range(0, len(images), num_images_per_page):
         imgs = images[i:i+num_images_per_page]
         page_index = i // num_images_per_page
-        is_odd_page = (page_index % 2 == 0)  # 0-indexed, so page 1 is index 0
+        is_odd_page = (page_index % 2 == 0) # 0-indexed, so page 1 is index 0
         
         # Create a blank page
         page = Image.new("RGB", page_size, (255, 255, 255))
@@ -65,7 +65,7 @@ def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrai
         if num_images_per_page == 1:
             # Single image per page - center it
             img = imgs[0]
-            
+
             # Default margins
             margin_top = 50
             margin_bottom = 50
@@ -82,21 +82,21 @@ def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrai
             # Calculate scaling to fit page with margins
             max_width = page_size[0] - margin_left - margin_right
             max_height = page_size[1] - margin_top - margin_bottom
-            
+
             # Calculate scale to fit image within page bounds
             scale_w = max_width / img.size[0]
             scale_h = max_height / img.size[1]
             scale = min(scale_w, scale_h)
-            
+
             new_width = int(img.size[0] * scale)
             new_height = int(img.size[1] * scale)
             img_resized = img.resize((new_width, new_height), Image.LANCZOS)
-            
+
             # Position the image according to margins
             x = margin_left + (max_width - new_width) // 2
             y = margin_top + (max_height - new_height) // 2
             page.paste(img_resized, (x, y))
-            
+
         else:
             # Multiple images per page - arrange based on orientation
             if orientation == "Landscape":
@@ -123,7 +123,7 @@ def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrai
             # Add margins around the entire grid
             available_width = page_size[0] - margin_left - margin_right
             available_height = page_size[1] - margin_top - margin_bottom
-            
+
             # Calculate cell size accounting for gaps in both directions
             total_gaps_w = (grid_cols - 1) * gap
             total_gaps_h = (grid_rows - 1) * gap
@@ -133,15 +133,15 @@ def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrai
             for idx, img in enumerate(imgs):
                 row = idx // grid_cols
                 col = idx % grid_cols
-                
+
                 # Calculate position with gaps and margins
                 x = margin_left + col * (cell_w + gap)
                 y = margin_top + row * (cell_h + gap)
-                
+
                 # Resize image to fit cell while maintaining aspect ratio
                 img_aspect = img.size[0] / img.size[1]
                 cell_aspect = cell_w / cell_h
-                
+
                 if img_aspect > cell_aspect:
                     # Image is wider than cell - fit to width
                     new_width = cell_w
@@ -156,7 +156,6 @@ def generate_pdf_from_images(images, num_images_per_page=1, orientation="Portrai
                     # Center horizontally in cell
                     x_offset = (cell_w - new_width) // 2
                     x += x_offset
-                
                 img_resized = img.resize((new_width, new_height), Image.LANCZOS)
                 page.paste(img_resized, (x, y))
         
@@ -251,26 +250,46 @@ def suggest_savings(page_data, is_color, duplex, paper_size, copies):
         suggestions.append("Switch to A4 paper to reduce paper cost by approx. 33% per page.")
     return suggestions
 
+# --- Function to get pixel color from image ---
+def get_pixel_color(image, x, y):
+    """Gets the RGB color of a pixel at (x, y) and converts it to hex."""
+    try:
+        img_array = np.array(image.convert("RGB"))
+        if 0 <= x < img_array.shape[1] and 0 <= y < img_array.shape[0]:
+            r, g, b = img_array[y, x]
+            hex_code = f"#{r:02x}{g:02x}{b:02x}".upper()
+            return hex_code, (r, g, b)
+        else:
+            return None, None
+    except Exception as e:
+        st.error(f"Error getting pixel color: {e}")
+        return None, None
+
 # --- Streamlit App ---
 st.set_page_config(layout="wide")
 st.title("🧾 Advanced PDF Printing Cost Estimator")
 
-# Use session state to store data across reruns
+# Initialize session state
 if 'original_images' not in st.session_state:
     st.session_state.original_images = None
 if 'hex_codes_input' not in st.session_state:
     st.session_state.hex_codes_input = ""
+if 'picked_color' not in st.session_state:
+    st.session_state.picked_color = None
+if 'picked_coords' not in st.session_state:
+    st.session_state.picked_coords = (0, 0)
 
 uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
 
 if uploaded_file:
     if st.session_state.original_images is None:
         with st.spinner("Analyzing PDF... This may take a moment."):
-            pdf_bytes = uploaded_file.read()
-            st.session_state.original_images = convert_from_bytes(
-                pdf_bytes, 
-                dpi=72
-            )
+            try:
+                pdf_bytes = uploaded_file.read()
+                st.session_state.original_images = convert_from_bytes(pdf_bytes, dpi=72)
+            except Exception as e:
+                st.error(f"Failed to process PDF: {e}")
+                st.stop()
     
     images = st.session_state.original_images
     original_page_data = analyze_pdf_ink_usage(images)
@@ -299,15 +318,56 @@ if uploaded_file:
         st.info("Use the picker to add colors, or type/paste hex codes directly into the text box below.")
         
         picker_col, button_col = st.columns([1, 3])
-        
+
         with picker_col:
             selected_color = st.color_picker("Pick a color")
-        
+
         with button_col:
             st.write("")
             if st.button("➕ Add Color to List"):
                 st.session_state.hex_codes_input += f"{selected_color} "
-
+        
+        with st.expander("Optional: Pixel Color Picker"):
+            st.info("Select a page, click on the image to pick a color, and add it to the removal list.")
+            page_options = [f"Page {i+1}" for i in range(len(images))]
+            selected_page = st.selectbox("Select Page to Pick Color", page_options)
+            page_index = page_options.index(selected_page)
+            
+            img = images[page_index]
+            max_display_width = 600
+            scale = max_display_width / img.size[0]
+            display_size = (max_display_width, int(img.size[1] * scale))
+            img_display = img.resize(display_size, Image.LANCZOS)
+            img_array = np.array(img_display.convert("RGB"))
+            
+            value = streamlit_image_coordinates(img_array, key=f"img_coords_{page_index}", width=max_display_width)
+            
+            if value is not None:
+                try:
+                    x = int(value["x"] / scale)
+                    y = int(value["y"] / scale)
+                    hex_code, rgb = get_pixel_color(img, x, y)
+                    if hex_code:
+                        st.session_state.picked_color = hex_code
+                        st.session_state.picked_coords = (x, y)
+                        st.success(f"Selected color: {hex_code} at ({x}, {y})")
+                    else:
+                        st.error("Invalid coordinates selected. Please click within the image bounds.")
+                except Exception as e:
+                    st.error(f"Error processing pixel color: {e}")
+            
+            if st.session_state.picked_color is not None:
+                st.markdown(f"**Selected Color**: {st.session_state.picked_color} (Coordinates: X: {st.session_state.picked_coords[0]}, Y: {st.session_state.picked_coords[1]})")
+                if st.button("Add to Removal List"):
+                    current_hex_codes = st.session_state.hex_codes_input.strip().split()
+                    if st.session_state.picked_color not in current_hex_codes:
+                        st.session_state.hex_codes_input = st.session_state.hex_codes_input.strip() + f" {st.session_state.picked_color}" if st.session_state.hex_codes_input else st.session_state.picked_color
+                        st.success(f"Added color {st.session_state.picked_color} to removal list")
+                    else:
+                        st.info(f"Color {st.session_state.picked_color} is already in the removal list")
+            else:
+                st.markdown("**Selected Color**: None")
+        
         st.session_state.hex_codes_input = st.text_area(
             "Colors to Remove (one hex code per space)",
             value=st.session_state.hex_codes_input,
@@ -318,18 +378,18 @@ if uploaded_file:
         
         # Margin settings for odd pages
         st.subheader("📏 Margin Settings for Odd Pages")
-        st.info("Set custom margins for odd-numbered pages (1, 3, 5...) to improve image clarity. Use positive, zero, or negative values in pixels.")
-        
+        st.info("Set custom margins for odd-numbered pages (1, 3, 5...).")
+
         margin_col1, margin_col2 = st.columns(2)
-        
+
         with margin_col1:
             margin_top = st.number_input("Top Margin (pixels)", value=50, step=1)
             margin_bottom = st.number_input("Bottom Margin (pixels)", value=50, step=1)
-        
+
         with margin_col2:
             margin_left = st.number_input("Left Margin (pixels)", value=50, step=1)
             margin_right = st.number_input("Right Margin (pixels)", value=50, step=1)
-            
+
         apply_margins = st.checkbox("Apply custom margins to odd pages", value=False)
 
     st.markdown("---")
@@ -353,7 +413,7 @@ if uploaded_file:
                     "left": margin_left,
                     "right": margin_right
                 }
-                
+
                 st.session_state.new_pdf_bytes = generate_pdf_from_images(
                     modified_images, num_images_per_page, page_orientation, gap_between_images,
                     margins=margins, apply_margins_to_odd_pages=apply_margins
@@ -373,7 +433,7 @@ if uploaded_file:
                 "left": margin_left,
                 "right": margin_right
             }
-            
+
             st.session_state.new_pdf_bytes = generate_pdf_from_images(
                 images, num_images_per_page, page_orientation, gap_between_images,
                 margins=margins, apply_margins_to_odd_pages=apply_margins
@@ -395,9 +455,8 @@ if uploaded_file:
             if st.session_state.get('new_pdf_bytes'):
                 # --- Enhanced PDF Preview ---
                 st.subheader("📄 PDF Preview")
-                
+
                 try:
-                    from pdf2image import convert_from_bytes
                     # Convert only first few pages for faster preview (max 3 pages)
                     max_preview_pages = min(3, len(images) // num_images_per_page + 1)
                     preview_images = convert_from_bytes(
@@ -406,11 +465,10 @@ if uploaded_file:
                         first_page=1,
                         last_page=max_preview_pages
                     )
-                    
+
                     # Show page navigation
                     total_pages = len(images) // num_images_per_page + (1 if len(images) % num_images_per_page > 0 else 0)
                     preview_pages = len(preview_images)
-                    
                     if total_pages > 1:
                         page_num = st.selectbox(
                             f"Select page to preview (Showing first {preview_pages} of {total_pages} pages)",
@@ -419,14 +477,14 @@ if uploaded_file:
                         ) - 1
                     else:
                         page_num = 0
-                    
+
                     # Display selected page
                     st.image(
                         preview_images[page_num], 
                         caption=f"Page {page_num + 1} of {total_pages} (Preview)",
                         use_column_width=True
                     )
-                    
+
                     # Show page info
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -435,10 +493,10 @@ if uploaded_file:
                         st.metric("Images per Page", num_images_per_page)
                     with col3:
                         st.metric("Orientation", page_orientation)
-                        
+
                     if total_pages > preview_pages:
                         st.info(f"📄 Showing preview of first {preview_pages} pages. Download the PDF to see all {total_pages} pages.")
-                        
+
                 except Exception as e:
                     st.error(f"Preview not available: {e}")
                     st.info("You can still download the PDF below.")
@@ -457,6 +515,6 @@ if uploaded_file:
             st.info(s)
 
 if st.sidebar.button("Reset and Start Over"):
-    for key in st.session_state.keys():
+    for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
